@@ -1,6 +1,6 @@
 import streamlit as st
 from app_model.db import get_connection
-from app_model.schema import create_user_table
+from app_model.schema import create_user_table, create_login_history_table
 from app_model.users import delete_user, login_user_terminal, register_user_terminal, get_user, is_valid_hash, add_user, generate_hash
 
 
@@ -119,7 +119,9 @@ def require_login():
     
 # SQL DATABASE
 conn = get_connection()
-user_table = create_user_table(conn)  # Ensure the users table exists
+user_table = create_user_table(conn)
+login_history_table = create_login_history_table(conn) 
+conn.close()
     
 # STREAMLIT
 st.set_page_config(page_title='Home', page_icon=':home:', layout='wide')
