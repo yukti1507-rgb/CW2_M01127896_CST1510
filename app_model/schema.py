@@ -21,7 +21,8 @@ def create_login_history_table(conn):
         login_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         success INTEGER NOT NULL,
         failed_attempts INTEGER DEFAULT 0,
-        account_locked INTEGER DEFAULT 0      
+        account_locked INTEGER DEFAULT 0,
+        locked_until TIMESTAMP      
     );'''
     cur.execute(sql)
     conn.commit()
