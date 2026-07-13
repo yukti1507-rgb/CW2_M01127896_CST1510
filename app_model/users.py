@@ -127,11 +127,103 @@ LOGIN_SUCCESS = 3
 LOGIN_FAILED_ATTEMPTS = 4
 LOGIN_ACCOUNT_LOCKED = 5
 LOGIN_LOCKED_UNTIL = 6
+MAX_LOGIN_ATTEMPTS = 3
+LOCK_TIME_INCREMENT = 5
 
-def save_login_attempt(conn, user_id, success, failed_attempts, account_locked, locked_until):
+def save_login_attempt(conn, user_id, login_success, failed_attempts, account_locked, locked_until):
     cur = conn.cursor()
     sql = 'INSERT INTO login_history (user_id, success, failed_attempts, account_locked, locked_until) VALUES (?, ?, ?, ?, ?)'
-    param = (user_id, success, failed_attempts, account_locked, locked_until)
+    param = (user_id, login_success, failed_attempts, account_locked, locked_until)
     cur.execute(sql, param)
     conn.commit()
+
+def get_login_state(conn, user_id):
+    cur = conn.cursor()
+    cur.execute('SELECT * FROM login_history WHERE user_id = ? ORDER BY login_time DESC LIMIT 1', (user_id,))
+    return cur.fetchone()
+
+def get_locked_state(conn, user_id):
+    login_state = get_login_state(conn, user_id)
+
+    if not login_state:
+        return False
+    
+    if not login_state[LOGIN_ACCOUNT_LOCKED]:
+        return False
+    
+    locked_until = login_state[LOGIN_LOCKED_UNTIL]
+
+    if locked_until:
+        locked_until = datetime.fromisoformat(locked_until)
+        if datetime.now() >= locked_until:
+            return False
+    return True
+
+def get_failed_attempts(conn, user_id):
+    login_state = get_login_state(conn, user_id)
+
+    if not login_state:
+        return 0
+    
+    return login_state[LOGIN_FAILED_ATTEMPTS]
+
+def get_lockout_count(conn, user_id):
+    cur = conn.cursor()
+    cur.execute('SELECT COUNT(*) FROM login_history WHERE user_id = ? AND account_locked = 1', (user_id,))
+    return cur.fetchone()[0]
+
+def get_remaining_locked_time(conn, user_id):
+    login_state = get_login_state(conn, user_id)
+
+    if not login_state:
+        return 0
+    
+    locked_until = login_state[LOGIN_LOCKED_UNTIL]
+
+    if not locked_until:
+        return 0
+    
+    locked_until = datetime.fromisoformat(locked_until)
+    remaining = locked_until - datetime.now()
+    return max(0, int(remaining.total_seconds()))
+
+
+
+    
+
+def check_login_attempt(conn, username, password):
+    user = get_user(conn, username)
+
+    if not user:
+        return False, "Username does not exist."
+    
+    user_id = user[USER_ID]
+
+    if get_locked_state(conn, user_id):
+        return False, "Account temporarily locked. Please try again later."
+    
+    if is_valid_hash(password, user[PASSWORD_HASH]):
+
+        save_login_attempt(conn, user_id, login_success=1, failed_attempts=0, account_locked=0, locked_until=None)
+
+        return True, user
+    
+    failed_attempts = get_failed_attempts(conn, user_id)
+    failed_attempts += 1
+
+    if failed_attempts >= MAX_LOGIN_ATTEMPTS:
+        previous_account_lock = get_lockout_count(conn, user_id)
+        lock_minutes = (previous_account_lock + 1) * LOCK_TIME_INCREMENT
+        locked_until = datetime.now() + timedelta(minutes=lock_minutes)
+        unlock_time = locked_until.isoformat()
+        save_login_attempt(conn, user_id, login_success=0, failed_attempts=failed_attempts, account_locked=1, locked_until=unlock_time)
+        return False, (f"Account locked due to {failed_attempts} failed login attempts.\n Please try again in {lock_minutes} minutes.")
+    
+    else:
+        save_login_attempt(conn, user_id, login_success=0, failed_attempts=failed_attempts, account_locked=0, locked_until=None)
+
+        remaining_attempts = MAX_LOGIN_ATTEMPTS - failed_attempts
+
+        return False, (f"Incorrect password. \n{remaining_attempts} attempt(s) remaining.")
+
 

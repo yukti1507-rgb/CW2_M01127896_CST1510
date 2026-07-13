@@ -1,7 +1,7 @@
 import streamlit as st
 from app_model.db import get_connection
 from app_model.schema import create_user_table, create_login_history_table
-from app_model.users import login_user_terminal, register_user_terminal, get_user, is_valid_hash, PASSWORD_HASH, USERNAME, ROLE
+from app_model.users import login_user_terminal, register_user_terminal, get_user, is_valid_hash, check_login_attempt, PASSWORD_HASH, USERNAME, ROLE
 
 
 def main():
@@ -31,12 +31,14 @@ def login_page():
         conn = get_connection()
         try:
             user = get_user(conn, username)
-        except Exception as e:
-            st.error(f"Error retrieving user: {e}")
         finally:
             conn.close()
 
-        if user and is_valid_hash(password, user[PASSWORD_HASH]):
+        if not user:
+            st.error("Incorrect username or password.")
+            return
+        
+        if is_valid_hash(password, user[PASSWORD_HASH]):
             st.session_state.logged_in = True
             st.session_state.username  = user[USERNAME]
             st.session_state.role      = user[ROLE]
